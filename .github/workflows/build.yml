@@ -1,0 +1,52 @@
+name: Build macOS Apps
+
+on:
+  pull_request:
+    paths:
+      - "assets/**"
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/build.yml"
+      - ".github/workflows/release.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Package macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: Apple Silicon (arm64)
+            build: build:mac:arm64
+            verify: verify:mac:arm64
+          - arch: Intel (x64)
+            build: build:mac:x64
+            verify: verify:mac:x64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run automated test suite
+        run: npm test
+
+      - name: Package application
+        run: npm run ${{ matrix.build }}
+
+      - name: Verify executable architecture
+        run: npm run ${{ matrix.verify }}

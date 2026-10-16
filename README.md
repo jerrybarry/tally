@@ -65,16 +65,39 @@ This repository implements the native desktop app foundation using **Electron + 
 
 ### 📦 Building the macOS Standalone App
 
-To package and compile a native macOS `.app` bundle:
+Install dependencies first with `npm ci`, then select the build that matches
+the target Mac.
+
+For Apple Silicon Macs (M1, M2, M3, M4, and newer):
 
 ```bash
-npm run build:mac
+npm run build:dmg:arm64
 ```
 
-The compiled application bundle will be created inside the `dist/` directory:
+This produces the native arm64 installer at:
+
+```text
+dist/Tally-AppleSilicon-arm64.dmg
 ```
-dist/Tally-darwin-x64/Tally.app
+
+For Intel Macs:
+
+```bash
+npm run build:dmg:x64
 ```
+
+This produces:
+
+```text
+dist/Tally-Intel-x64.dmg
+```
+
+Apple Silicon users should install the artifact containing
+`AppleSilicon-arm64` in its name. The Intel/x64 build requires Rosetta 2 on an
+Apple Silicon Mac. Both build commands verify the packaged executable's CPU
+architecture and ad-hoc code signature before creating the DMG. Release builds
+are not Apple-notarized, so macOS may still require the documented Gatekeeper
+bypass on first launch.
 
 ---
 

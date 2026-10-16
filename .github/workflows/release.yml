@@ -32,16 +32,12 @@ jobs:
 
       - name: Build macOS Apple Silicon (arm64)
         run: |
-          npx @electron/packager . 'Tally' --platform=darwin --arch=arm64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\.app|^/test|^/\.git|^/config\.json|^/usage\.jsonl)'
-          cp assets/icon.icns dist/Tally-darwin-arm64/Tally.app/Contents/Resources/electron.icns || true
-          hdiutil create -volname "Tally" -srcfolder dist/Tally-darwin-arm64/Tally.app -ov -format UDZO dist/Tally-AppleSilicon-arm64.dmg
+          npm run build:dmg:arm64
           cd dist && zip -r -y Tally-AppleSilicon-arm64.zip Tally-darwin-arm64/Tally.app && cd ..
 
       - name: Build macOS Intel (x64)
         run: |
-          npx @electron/packager . 'Tally' --platform=darwin --arch=x64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\.app|^/test|^/\.git|^/config\.json|^/usage\.jsonl)'
-          cp assets/icon.icns dist/Tally-darwin-x64/Tally.app/Contents/Resources/electron.icns || true
-          hdiutil create -volname "Tally" -srcfolder dist/Tally-darwin-x64/Tally.app -ov -format UDZO dist/Tally-Intel-x64.dmg
+          npm run build:dmg:x64
           cd dist && zip -r -y Tally-Intel-x64.zip Tally-darwin-x64/Tally.app && cd ..
 
       - name: Publish GitHub Release

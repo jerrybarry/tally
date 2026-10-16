@@ -8,9 +8,14 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/**/*.test.js",
-    "build:mac": "electron-packager . 'Tally' --platform=darwin --arch=x64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && (cp assets/icon.icns dist/Tally-darwin-x64/Tally.app/Contents/Resources/electron.icns 2>/dev/null || true)",
-    "build:mac:arm64": "electron-packager . 'Tally' --platform=darwin --arch=arm64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && (cp assets/icon.icns dist/Tally-darwin-arm64/Tally.app/Contents/Resources/electron.icns 2>/dev/null || true)",
-    "build:dmg": "npm run build:mac && hdiutil create -volname 'Tally' -srcfolder dist/Tally-darwin-x64/Tally.app -ov -format UDZO dist/Tally-Intel-x64.dmg"
+    "build:mac": "npm run build:mac:x64",
+    "build:mac:x64": "electron-packager . 'Tally' --platform=darwin --arch=x64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && cp assets/icon.icns dist/Tally-darwin-x64/Tally.app/Contents/Resources/electron.icns && codesign --force --deep --sign - dist/Tally-darwin-x64/Tally.app",
+    "build:mac:arm64": "electron-packager . 'Tally' --platform=darwin --arch=arm64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && cp assets/icon.icns dist/Tally-darwin-arm64/Tally.app/Contents/Resources/electron.icns && codesign --force --deep --sign - dist/Tally-darwin-arm64/Tally.app",
+    "verify:mac:x64": "node scripts/verify-macos-architecture.mjs dist/Tally-darwin-x64/Tally.app x86_64",
+    "verify:mac:arm64": "node scripts/verify-macos-architecture.mjs dist/Tally-darwin-arm64/Tally.app arm64",
+    "build:dmg": "npm run build:dmg:x64",
+    "build:dmg:x64": "npm run build:mac:x64 && npm run verify:mac:x64 && hdiutil create -volname 'Tally' -srcfolder dist/Tally-darwin-x64/Tally.app -ov -format UDZO dist/Tally-Intel-x64.dmg",
+    "build:dmg:arm64": "npm run build:mac:arm64 && npm run verify:mac:arm64 && hdiutil create -volname 'Tally' -srcfolder dist/Tally-darwin-arm64/Tally.app -ov -format UDZO dist/Tally-AppleSilicon-arm64.dmg"
   },
   "keywords": [
     "tally",

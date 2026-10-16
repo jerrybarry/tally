@@ -64,6 +64,26 @@ When adding support for a new router or command:
    npm test
    ```
 
+### Verifying macOS packages
+
+Use the architecture-specific package commands when changing Electron startup,
+assets, dependencies, or release automation:
+
+```bash
+# Native Apple Silicon (M-series Macs)
+npm run build:dmg:arm64
+
+# Intel Macs
+npm run build:dmg:x64
+```
+
+The commands ad-hoc sign the finished application bundle, then inspect its
+signature and packaged executable with macOS `codesign` and `lipo` before
+creating the installer. This prevents an Intel application from being
+published under an Apple Silicon filename and catches bundle modifications
+that invalidate its signature. Pull requests that affect the application or
+packaging run both packaging checks in GitHub Actions.
+
 ---
 
 ## 📋 Reporting Bugs & Feature Requests

@@ -103,5 +103,46 @@
     "success": true,
     "board_type": "ZLT X17U",
     "software_version": "V2.0.1_MOCK"
+  },
+  "cmd_233": {
+    "success": true,
+    "cmd": 233,
+    "token": "772c795ef96782c0d4928f4fd4259c4b"
+  },
+  "cmd_278_subcmd_0": {
+    "success": true,
+    "cmd": 278,
+    "subcmd": "0",
+    "datas": {
+      "maclist": [
+        { "mac": "02:00:00:00:00:02" }
+      ],
+      "macfilter": "deny"
+    }
+  },
+  "cmd_278_subcmd_1": {
+    "success": true,
+    "cmd": 278,
+    "subcmd": "1",
+    "datas": {
+      "maclist": [
+        { "mac": "02:00:00:00:00:02" }
+      ],
+      "macfilter": "deny"
+    }
+  },
+  "cmd_278_empty": {
+    "success": true,
+    "cmd": 278,
+    "subcmd": "0",
+    "datas": {
+      "maclist": [],
+      "macfilter": "close"
+    }
+  },
+  "cmd_278_post_success": {
+    "success": true,
+    "cmd": 278,
+    "message": ""
   }
 }

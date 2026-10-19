@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   minimizeWindow: () => ipcRenderer.invoke("minimize-window"),
   closeWindow: () => ipcRenderer.invoke("close-window"),
   setDeviceNickname: (mac, nickname) => ipcRenderer.invoke("set-device-nickname", { mac, nickname }),
+  blockDevice: (mac, name) => ipcRenderer.invoke("block-device", { mac, name }),
+  unblockDevice: (mac, name) => ipcRenderer.invoke("unblock-device", { mac, name }),
+  unblockAll: () => ipcRenderer.invoke("unblock-all"),
+  setDeviceLimit: (mac, limitGb, autoBlock) => ipcRenderer.invoke("set-device-limit", { mac, limitGb, autoBlock }),
   onSummaryUpdate: (callback) => {
     ipcRenderer.on("summary-update", (_event, data) => callback(data));
   },

@@ -272,27 +272,37 @@
           <span>Everything the router has given an address to</span>
         </div>
         <div class="bar-actions">
+          <button class="btn ghost" id="btnUnblockAll" style="display:none;padding:4px 12px;font-size:11.5px;color:var(--bad);border-color:rgba(214,69,69,0.3)">Unblock all</button>
           <button class="btn ghost" id="btnRefreshDevices" style="padding:4px 12px;font-size:11.5px">Refresh</button>
         </div>
       </div>
       <div class="pad">
+        <div class="blacklist-banner" id="blacklistBanner" style="display:none">
+          <div class="blacklist-banner-icon">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </div>
+          <div class="blacklist-banner-text" id="blacklistBannerText">0 devices currently blocked</div>
+          <button class="btn-banner-unblock" id="btnBannerUnblockAll">Unblock all</button>
+        </div>
         <table>
           <thead>
             <tr>
               <th>Device</th>
               <th>Connection</th>
               <th>Used today</th>
-              <th>Used this month</th>
+              <th>Used this month (est.)</th>
+              <th>Soft limit</th>
+              <th style="text-align:right">Access</th>
             </tr>
           </thead>
           <tbody id="devicesTableBody">
             <tr>
-              <td colspan="4" style="text-align:center;color:var(--mute);padding:24px">Loading connected devices…</td>
+              <td colspan="6" style="text-align:center;color:var(--mute);padding:24px">Loading connected devices…</td>
             </tr>
           </tbody>
         </table>
         <div class="callout" id="devicesCallout">
-          <b>How device usage is measured:</b> This router firmware doesn't track bytes per individual phone or client device, so only <b>this Mac</b> is measured directly via its own macOS network interface. <b>“All other devices together”</b> represents the router’s total usage minus this Mac. Monthly figures count from when the monitor started.
+          <b>How device usage is measured:</b> This router firmware doesn't track hardware byte counters per client, so only <b>this Mac</b> is measured directly via its own macOS interface. All other devices share WAN traffic and are labeled <b>(estimated)</b>.
         </div>
       </div>
     </section>
@@ -368,6 +378,18 @@
 
         <div class="row">
           <div>
+            <b>Auto-unblock schedule</b>
+            <p>Automatically clears the Wi-Fi blacklist on a recurring schedule</p>
+          </div>
+          <select id="sAutoUnblockSchedule" aria-label="Auto-unblock schedule">
+            <option value="disabled" selected>Disabled (Manual only)</option>
+            <option value="daily">Daily reset (Midnight)</option>
+            <option value="monthly">Monthly reset (1st of month)</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <div>
             <b>Appearance</b>
             <p>Follows macOS system settings by default</p>
           </div>
@@ -388,8 +410,10 @@
         <div class="callout" style="margin-top:24px">
           <b>Trust &amp; Security:</b>
           <p style="margin:6px 0 0;line-height:1.6">
-            • <b>macOS Keychain:</b> Router passwords are encrypted via Electron’s safeStorage directly in your macOS Keychain and never stored in plain text.<br>
-            • <b>Lockout Protection:</b> The router firmware locks logins for several minutes after 3 consecutive wrong passwords. Tally automatically stops polling upon a single rejected login to keep your router accessible.
+            • <b>Blacklist Only:</b> Tally operates in blacklist mode only to prevent locking out connected devices.<br>
+            • <b>Self &amp; Gateway Protection:</b> Refuses to block this Mac or the router gateway to ensure you can always manage your connection.<br>
+            • <b>macOS Keychain:</b> Passwords are encrypted via Electron’s safeStorage directly in macOS Keychain.<br>
+            • <b>Lockout Protection:</b> Polling automatically pauses upon login failure to prevent router lockout.
           </p>
         </div>
       </div>
@@ -408,6 +432,65 @@
       <div style="flex:1"></div>
       <button class="btn ghost" id="btnCancelNickname">Cancel</button>
       <button class="btn primary" id="btnSaveNickname">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- BLOCK DEVICE CONFIRMATION MODAL (Rule 2) -->
+<div class="modal-backdrop" id="blockConfirmModal" style="display:none">
+  <div class="modal-card">
+    <h3 style="margin:0 0 6px;font-family:var(--font-heading);font-size:16px;color:var(--bad)">Block Device Access</h3>
+    <p id="blockConfirmDesc" style="margin:0 0 16px;color:var(--ink);font-size:13px;line-height:1.5">
+      Are you sure you want to block this device?
+    </p>
+    <div class="modal-info-box" id="blockConfirmInfo" style="margin-bottom:16px;padding:12px;background:rgba(214,69,69,0.08);border:1px solid rgba(214,69,69,0.2);border-radius:8px;font-size:12px">
+      <div>Device: <b id="blockConfirmDeviceName">—</b></div>
+      <div style="margin-top:4px">MAC Address: <code id="blockConfirmDeviceMac" style="font-family:monospace;font-size:12px">—</code></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCancelBlock">Cancel</button>
+      <button class="btn" id="btnExecuteBlock" style="background:var(--bad) !important;color:#fff !important">Confirm Block</button>
+    </div>
+  </div>
+</div>
+
+<!-- UNBLOCK ALL CONFIRMATION MODAL (Rule 4) -->
+<div class="modal-backdrop" id="unblockAllModal" style="display:none">
+  <div class="modal-card">
+    <h3 style="margin:0 0 6px;font-family:var(--font-heading);font-size:16px">Unblock All Devices</h3>
+    <p style="margin:0 0 16px;color:var(--mute);font-size:13px;line-height:1.5">
+      This will remove all blocked MAC addresses from the router blacklist and restore Wi-Fi access to every previously blocked device.
+    </p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnCancelUnblockAll">Cancel</button>
+      <button class="btn primary" id="btnExecuteUnblockAll">Unblock All</button>
+    </div>
+  </div>
+</div>
+
+<!-- DEVICE SOFT LIMIT MODAL (Rule 7) -->
+<div class="modal-backdrop" id="deviceLimitModal" style="display:none">
+  <div class="modal-card">
+    <h3 style="margin:0 0 6px;font-family:var(--font-heading);font-size:16px">Soft Data Limit (Estimated)</h3>
+    <p id="limitModalSub" style="margin:0 0 14px;color:var(--mute);font-size:12px">
+      Configure estimated usage threshold for <b id="limitModalDeviceName">—</b>
+    </p>
+    <label for="deviceLimitGbInput" style="display:block;font-size:11.5px;font-weight:600;margin-bottom:6px">Estimated Limit (GB)</label>
+    <input type="number" id="deviceLimitGbInput" placeholder="e.g. 10" class="modal-input" min="0.1" step="0.5" style="margin-bottom:14px">
+    
+    <label class="chk" style="display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-bottom:16px;cursor:pointer">
+      <input type="checkbox" id="deviceAutoBlockCheck" style="margin-top:2px">
+      <span>
+        <b>Auto-block when limit exceeded</b><br>
+        <small style="color:var(--mute)">Off by default. When unchecked, Tally sends an alert and gives you a one-click Block button.</small>
+      </span>
+    </label>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnRemoveDeviceLimit" style="font-size:11px">Remove Limit</button>
+      <div style="flex:1"></div>
+      <button class="btn ghost" id="btnCancelDeviceLimit">Cancel</button>
+      <button class="btn primary" id="btnSaveDeviceLimit">Save Limit</button>
     </div>
   </div>
 </div>

@@ -7,9 +7,12 @@ import { DataEngine } from "./engine.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "../..");
 const RENDERER_DIR = path.resolve(__dirname, "../renderer");
+const ASSETS_DIR = path.resolve(ROOT_DIR, "assets");
 
 const engine = new DataEngine(ROOT_DIR);
-engine.start();
+if (process.env.NODE_ENV !== "test") {
+  engine.start();
+}
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -38,6 +41,8 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(500, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({ error: err.message, summary: engine.getSummary() }));
     }
+  }
+
   if (urlPath === "/api/disconnect" && req.method === "POST") {
     engine.disconnect();
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -95,6 +100,69 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (urlPath === "/api/devices/block" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", async () => {
+      try {
+        const { mac, name } = JSON.parse(body);
+        const result = await engine.blockDevice(mac, name);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (urlPath === "/api/devices/unblock" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", async () => {
+      try {
+        const { mac, name } = JSON.parse(body);
+        const result = await engine.unblockDevice(mac, name);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
+  if (urlPath === "/api/devices/unblock-all" && req.method === "POST") {
+    try {
+      const result = await engine.unblockAll();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
+    } catch (e) {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+    return;
+  }
+
+  if (urlPath === "/api/devices/limit" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      try {
+        const { mac, limitGb, autoBlock } = JSON.parse(body);
+        engine.setDeviceLimit(mac, limitGb, autoBlock);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, summary: engine.getSummary() }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
+  }
+
   if (urlPath === "/api/test-connection" && req.method === "POST") {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
@@ -112,10 +180,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Static File Serving
-  let filePath = path.join(RENDERER_DIR, urlPath === "/" ? "index.html" : urlPath);
-  if (!fs.existsSync(filePath)) {
-    filePath = path.join(ROOT_DIR, urlPath);
+  // Static File Serving — sanitize path to prevent directory traversal (CWE-27 / GHSA-x3jp-2cwp-7q9m)
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(urlPath);
+  } catch {
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    return res.end("Bad Request");
+  }
+
+  // Reject null bytes and directory traversal tricks
+  if (decodedPath.includes("\0")) {
+    res.writeHead(400, { "Content-Type": "text/plain" });
+    return res.end("Bad Request");
+  }
+
+  const cleanPath = decodedPath === "/" || decodedPath === "" ? "/index.html" : decodedPath;
+
+  let baseDir = RENDERER_DIR;
+  let relPath = cleanPath;
+
+  if (cleanPath.startsWith("/assets/")) {
+    baseDir = ASSETS_DIR;
+    relPath = cleanPath.slice("/assets/".length);
+  } else {
+    relPath = cleanPath.replace(/^\/+/, "");
+  }
+
+  // Resolve target path and verify it stays inside baseDir
+  const filePath = path.resolve(baseDir, relPath);
+
+  // CRITICAL: Reject any resolved path that escapes the allowed directory
+  if (filePath !== baseDir && !filePath.startsWith(baseDir + path.sep)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    return res.end("Forbidden");
   }
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
@@ -145,4 +243,9 @@ function listen(port, tries = 5) {
   });
 }
 
-listen(engine.config.port || 3000);
+if (process.env.NODE_ENV !== "test") {
+  listen(engine.config.port || 3000);
+}
+
+export { server, engine, listen };
+

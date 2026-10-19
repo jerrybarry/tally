@@ -79,3 +79,18 @@ export async function measureThisComputer(devices = []) {
       }
     : null;
 }
+
+export function getLocalMachineInfo() {
+  const ips = new Set();
+  const macs = new Set();
+  for (const [, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const a of addrs || []) {
+      if (!a.internal) {
+        if (a.address) ips.add(a.address.toLowerCase());
+        if (a.mac && a.mac !== "00:00:00:00:00:00") macs.add(a.mac.toLowerCase());
+      }
+    }
+  }
+  return { ips, macs, hostname: os.hostname() };
+}
+

@@ -216,6 +216,23 @@ ipcMain.handle("set-device-nickname", async (_event, { mac, nickname }) => {
   return engine.getSummary();
 });
 
+ipcMain.handle("block-device", async (_event, { mac, name }) => {
+  return await engine.blockDevice(mac, name);
+});
+
+ipcMain.handle("unblock-device", async (_event, { mac, name }) => {
+  return await engine.unblockDevice(mac, name);
+});
+
+ipcMain.handle("unblock-all", async () => {
+  return await engine.unblockAll();
+});
+
+ipcMain.handle("set-device-limit", async (_event, { mac, limitGb, autoBlock }) => {
+  engine.setDeviceLimit(mac, limitGb, autoBlock);
+  return engine.getSummary();
+});
+
 ipcMain.handle("save-config", async (_event, newConfig) => {
   engine.saveConfig(newConfig);
   if (typeof newConfig.openAtLogin === "boolean") {
@@ -334,6 +351,39 @@ if (!gotLock) {
         new Notification({
           title: "Tally Login Paused",
           body: msg || "Polling paused to prevent router lockout. Please check password in Settings.",
+          icon: path.join(app.getAppPath(), "assets", "icon.png"),
+        }).show();
+      }
+    });
+
+    // Rule 7: Soft limit notification - offer Block button and link to devices
+    engine.on("device-limit-reached", (info) => {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Device Data Limit Reached (Estimated)",
+          body: `"${info.name}" (${info.mac}) reached ${info.estimatedGb} GB (limit: ${info.limitGb} GB). Click to view in Devices and choose to block.`,
+          icon: path.join(app.getAppPath(), "assets", "icon.png"),
+        }).show();
+      }
+    });
+
+    // Rule 7: Auto-block notification when enabled by user
+    engine.on("device-auto-blocked", (info) => {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Device Auto-Blocked (Estimated Limit)",
+          body: `"${info.name}" (${info.mac}) reached ${info.estimatedGb} GB (limit: ${info.limitGb} GB) and was automatically blocked.`,
+          icon: path.join(app.getAppPath(), "assets", "icon.png"),
+        }).show();
+      }
+    });
+
+    // Rule 4: Scheduled auto-unblock notification
+    engine.on("auto-unblock-triggered", (info) => {
+      if (Notification.isSupported()) {
+        new Notification({
+          title: "Scheduled Auto-Unblock",
+          body: `All devices have been unblocked according to your ${info.schedule} reset schedule.`,
           icon: path.join(app.getAppPath(), "assets", "icon.png"),
         }).show();
       }

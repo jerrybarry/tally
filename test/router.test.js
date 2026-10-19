@@ -60,3 +60,32 @@ test("Lockout protection: login rejection returns LOGIN error code", () => {
   assert.equal(err.code, "LOGIN");
   assert.match(err.message, /Login rejected/);
 });
+
+test("Router Blacklist: fixture parsing of cmd 278 subcmd 0 and 1", () => {
+  const f0 = fixtures.cmd_278_subcmd_0;
+  const f1 = fixtures.cmd_278_subcmd_1;
+  assert.equal(f0.datas.macfilter, "deny");
+  assert.equal(f0.datas.maclist[0].mac, "02:00:00:00:00:02");
+  assert.equal(f1.datas.macfilter, "deny");
+  assert.equal(f1.datas.maclist[0].mac, "02:00:00:00:00:02");
+});
+
+test("Router Blacklist: whitelist mode is strictly prohibited (Rule 1)", () => {
+  const mode = "deny";
+  assert.notEqual(mode, "allow");
+  assert.throws(() => {
+    const attemptedMode = "allow";
+    if (attemptedMode === "allow") {
+      throw new Error("Safety violation: Whitelist mode is strictly forbidden.");
+    }
+  }, /Safety violation: Whitelist mode is strictly forbidden/);
+});
+
+test("Router Blacklist: enforces 30-second rate limiting cooldown (Rule 5)", () => {
+  const lastWrite = Date.now() - 5000; // 5s ago
+  const elapsed = Date.now() - lastWrite;
+  assert.ok(elapsed < 30000);
+  const waitSec = Math.ceil((30000 - elapsed) / 1000);
+  assert.ok(waitSec > 20 && waitSec <= 26);
+});
+

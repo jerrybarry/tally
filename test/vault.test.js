@@ -66,3 +66,48 @@ test("Vault: scrubs plain text passwords from config.json on disk", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+test("Vault: aborts login and returns to setup when password decryption fails (Rule 3)", async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "tally-vault-fail-"));
+
+  try {
+    const configFile = path.join(tmpDir, "config.json");
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify({
+        routerHost: "192.168.0.1",
+        encryptedPassword: "corrupted_or_inaccessible_keychain_cipher",
+      })
+    );
+
+    // Mock safeStorage where decryption fails (e.g. signature changed or Keychain locked)
+    const mockFailingSafeStorage = {
+      isEncryptionAvailable: () => true,
+      encryptString: () => null,
+      decryptString: () => null, // Fails!
+    };
+    initVault(mockFailingSafeStorage);
+
+    const engine = new DataEngine(tmpDir);
+
+    // Engine must NOT fall back to admin or plaintext
+    assert.equal(engine.password, null);
+    assert.equal(engine.config.disconnected, true);
+    assert.equal(engine.connected, false);
+
+    let routerSampleCalled = false;
+    engine.router = {
+      sample: async () => {
+        routerSampleCalled = true;
+        return {};
+      },
+    };
+
+    // Step must not invoke router.sample()
+    const summary = await engine.step();
+    assert.equal(routerSampleCalled, false);
+    assert.equal(summary.connected, false);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});

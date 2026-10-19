@@ -78,8 +78,15 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
+
+  // Block unexpected navigation and popups
+  mainWindow.webContents.on("will-navigate", (event) => {
+    event.preventDefault();
+  });
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
 

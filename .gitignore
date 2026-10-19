@@ -11,6 +11,7 @@ Tally.app/
 config.json
 usage.jsonl
 *.log
+.active_port
 
 # System & Editor Files
 .DS_Store

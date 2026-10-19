@@ -10,20 +10,15 @@ const ROOT_DIR = path.resolve(__dirname, "../..");
 const RENDERER_DIR = path.resolve(__dirname, "../renderer");
 
 const engine = new DataEngine(ROOT_DIR);
-if (process.env.NODE_ENV !== "test") {
-  engine.start();
-}
-
-const MIME_TYPES = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml",
-};
 
 const server = http.createServer(async (req, res) => {
+  // DNS Rebinding Defense: Host header must strictly match 127.0.0.1 or localhost
+  const hostHeader = (req.headers.host || "").split(":")[0].toLowerCase();
+  if (hostHeader !== "127.0.0.1" && hostHeader !== "localhost") {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    return res.end("Forbidden: Invalid Host header");
+  }
+
   const urlPath = req.url.split("?")[0];
 
   // API Endpoints
@@ -200,7 +195,10 @@ function listen(port, tries = 5) {
   });
 }
 
-if (process.env.NODE_ENV !== "test") {
+const isDirectRun = Boolean(process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]));
+
+if (isDirectRun) {
+  engine.start();
   listen(engine.config.port || 3000);
 }
 

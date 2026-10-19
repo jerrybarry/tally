@@ -74,9 +74,22 @@ export class DataEngine extends EventEmitter {
         const data = JSON.parse(raw);
 
         // Retrieve password from macOS Keychain if encrypted
-        if (data.encryptedPassword && isEncryptionAvailable()) {
-          const decrypted = decryptString(data.encryptedPassword);
-          if (decrypted) this.password = decrypted;
+        if (data.encryptedPassword) {
+          if (isEncryptionAvailable()) {
+            const decrypted = decryptString(data.encryptedPassword);
+            if (decrypted) {
+              this.password = decrypted;
+            } else {
+              // Decryption failed: Keychain locked, inaccessible, or signature changed
+              console.warn("safeStorage decryption failed; aborting login to prevent router lockout.");
+              this.password = null;
+              data.disconnected = true;
+            }
+          } else {
+            console.warn("safeStorage encryption unavailable; aborting login to prevent router lockout.");
+            this.password = null;
+            data.disconnected = true;
+          }
         } else if (data.password) {
           this.password = data.password;
           // Upgrade plain-text password to Keychain safeStorage encryption immediately
@@ -88,15 +101,16 @@ export class DataEngine extends EventEmitter {
               fs.writeFileSync(this.configFile, JSON.stringify(data, null, 2));
             }
           }
-        }
-
-        if (!this.password) {
-          this.password = data.password || "admin";
+        } else {
+          this.password = "admin";
         }
 
         // Return configuration without plain password exposed in state
         const sanitized = { ...defaults, ...data };
         delete sanitized.password;
+        if (!this.password) {
+          sanitized.disconnected = true;
+        }
         return sanitized;
       } catch (err) {
         console.error("Failed to parse config.json, using defaults:", err);
@@ -452,7 +466,7 @@ export class DataEngine extends EventEmitter {
     this.router = createRouter({
       host: this.config.routerHost || "192.168.0.1",
       user: this.config.username || "admin",
-      pass: this.password || "admin",
+      pass: this.password || "",
     });
   }
 
@@ -567,7 +581,7 @@ export class DataEngine extends EventEmitter {
   }
 
   async step() {
-    if (this.config.disconnected) {
+    if (this.config.disconnected || !this.password) {
       this.connected = false;
       return this.getSummary();
     }

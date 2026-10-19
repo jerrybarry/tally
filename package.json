@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test",
     "build:mac": "electron-packager . 'Tally' --platform=darwin --arch=x64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && (cp assets/icon.icns dist/Tally-darwin-x64/Tally.app/Contents/Resources/electron.icns 2>/dev/null || true)",
     "build:mac:arm64": "electron-packager . 'Tally' --platform=darwin --arch=arm64 --out=dist --icon=assets/icon.icns --overwrite --app-bundle-id=com.tally.app --prune=true --ignore='(^/dist|^/Tally\\.app|^/test|^/\\.git|^/config\\.json|^/usage\\.jsonl)' && (cp assets/icon.icns dist/Tally-darwin-arm64/Tally.app/Contents/Resources/electron.icns 2>/dev/null || true)",
     "build:dmg": "npm run build:mac && hdiutil create -volname 'Tally' -srcfolder dist/Tally-darwin-x64/Tally.app -ov -format UDZO dist/Tally-Intel-x64.dmg"

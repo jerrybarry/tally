@@ -10,8 +10,8 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 const appPath = app.getAppPath();
 const isPackaged = app.isPackaged;
 
-// In packaged app, user data must be in app.getPath("userData") (writable)
-const dataDir = isPackaged ? app.getPath("userData") : ROOT_DIR;
+// User data (config.json and usage.jsonl) is stored in app.getPath("userData")
+const dataDir = app.getPath("userData");
 
 // Ensure writable data directory exists
 if (!fs.existsSync(dataDir)) {
@@ -19,24 +19,30 @@ if (!fs.existsSync(dataDir)) {
 }
 
 // Seed config.json and usage.jsonl into dataDir if missing
-if (isPackaged) {
-  const userConfig = path.join(dataDir, "config.json");
-  const bundledConfig = path.join(appPath, "config.json");
-  if (!fs.existsSync(userConfig) && fs.existsSync(bundledConfig)) {
+const userConfig = path.join(dataDir, "config.json");
+const rootConfig = path.join(ROOT_DIR, "config.json");
+const bundledConfig = path.join(appPath, "config.json");
+if (!fs.existsSync(userConfig)) {
+  const source = fs.existsSync(rootConfig) ? rootConfig : (fs.existsSync(bundledConfig) ? bundledConfig : null);
+  if (source) {
     try {
-      fs.copyFileSync(bundledConfig, userConfig);
+      fs.copyFileSync(source, userConfig);
     } catch (e) {
-      console.warn("Could not copy bundled config.json:", e);
+      console.warn("Could not copy initial config.json:", e);
     }
   }
+}
 
-  const userUsage = path.join(dataDir, "usage.jsonl");
-  const bundledUsage = path.join(appPath, "usage.jsonl");
-  if (!fs.existsSync(userUsage) && fs.existsSync(bundledUsage)) {
+const userUsage = path.join(dataDir, "usage.jsonl");
+const rootUsage = path.join(ROOT_DIR, "usage.jsonl");
+const bundledUsage = path.join(appPath, "usage.jsonl");
+if (!fs.existsSync(userUsage)) {
+  const source = fs.existsSync(rootUsage) ? rootUsage : (fs.existsSync(bundledUsage) ? bundledUsage : null);
+  if (source) {
     try {
-      fs.copyFileSync(bundledUsage, userUsage);
+      fs.copyFileSync(source, userUsage);
     } catch (e) {
-      console.warn("Could not copy bundled usage.jsonl:", e);
+      console.warn("Could not copy initial usage.jsonl:", e);
     }
   }
 }

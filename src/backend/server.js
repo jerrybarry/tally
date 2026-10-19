@@ -3,11 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DataEngine } from "./engine.js";
+import { serveStatic } from "./safe-static.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "../..");
 const RENDERER_DIR = path.resolve(__dirname, "../renderer");
-const ASSETS_DIR = path.resolve(ROOT_DIR, "assets");
 
 const engine = new DataEngine(ROOT_DIR);
 if (process.env.NODE_ENV !== "test") {
@@ -180,51 +180,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Static File Serving — sanitize path to prevent directory traversal (CWE-27 / GHSA-x3jp-2cwp-7q9m)
-  let decodedPath;
-  try {
-    decodedPath = decodeURIComponent(urlPath);
-  } catch {
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    return res.end("Bad Request");
-  }
-
-  // Reject null bytes and directory traversal tricks
-  if (decodedPath.includes("\0")) {
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    return res.end("Bad Request");
-  }
-
-  const cleanPath = decodedPath === "/" || decodedPath === "" ? "/index.html" : decodedPath;
-
-  let baseDir = RENDERER_DIR;
-  let relPath = cleanPath;
-
-  if (cleanPath.startsWith("/assets/")) {
-    baseDir = ASSETS_DIR;
-    relPath = cleanPath.slice("/assets/".length);
-  } else {
-    relPath = cleanPath.replace(/^\/+/, "");
-  }
-
-  // Resolve target path and verify it stays inside baseDir
-  const filePath = path.resolve(baseDir, relPath);
-
-  // CRITICAL: Reject any resolved path that escapes the allowed directory
-  if (filePath !== baseDir && !filePath.startsWith(baseDir + path.sep)) {
-    res.writeHead(403, { "Content-Type": "text/plain" });
-    return res.end("Forbidden");
-  }
-
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    const ext = path.extname(filePath).toLowerCase();
-    const contentType = MIME_TYPES[ext] || "application/octet-stream";
-    res.writeHead(200, { "Content-Type": contentType });
-    return res.end(fs.readFileSync(filePath));
-  }
-
-  res.writeHead(404, { "Content-Type": "text/plain" });
-  res.end("Not Found");
+  // Static File Serving via safe-static.mjs (GHSA-x3jp-2cwp-7q9m)
+  return serveStatic(req, res, RENDERER_DIR);
 });
 
 function listen(port, tries = 5) {

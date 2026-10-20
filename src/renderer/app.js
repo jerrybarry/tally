@@ -53,60 +53,6 @@
       return data.summary;
     },
 
-    async blockDevice(mac, name) {
-      if (window.electronAPI?.blockDevice) {
-        return await window.electronAPI.blockDevice(mac, name);
-      }
-      const res = await fetch("/api/devices/block", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mac, name }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Failed to block device");
-      return data.summary;
-    },
-
-    async unblockDevice(mac, name) {
-      if (window.electronAPI?.unblockDevice) {
-        return await window.electronAPI.unblockDevice(mac, name);
-      }
-      const res = await fetch("/api/devices/unblock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mac, name }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Failed to unblock device");
-      return data.summary;
-    },
-
-    async unblockAll() {
-      if (window.electronAPI?.unblockAll) {
-        return await window.electronAPI.unblockAll();
-      }
-      const res = await fetch("/api/devices/unblock-all", {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Failed to unblock all devices");
-      return data.summary;
-    },
-
-    async setDeviceLimit(mac, limitGb, autoBlock) {
-      if (window.electronAPI?.setDeviceLimit) {
-        return await window.electronAPI.setDeviceLimit(mac, limitGb, autoBlock);
-      }
-      const res = await fetch("/api/devices/limit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mac, limitGb, autoBlock }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Failed to save device limit");
-      return data.summary;
-    },
-
     async connectRouter(creds) {
       if (window.electronAPI?.connectRouter) {
         return await window.electronAPI.connectRouter(creds);
@@ -555,7 +501,7 @@
   }
 
   // Render Devices
-  function renderDevices(devices = [], thisMac = null, otherDevices = null, meas = null, blockedMacs = []) {
+  function renderDevices(devices = [], thisMac = null, otherDevices = null, meas = null) {
     const tbody = $("devicesTableBody");
     if (!tbody) return;
 
@@ -605,41 +551,17 @@
       if (d.isThisComputer && thisMac) {
         usedToday = fmt((thisMac.today?.down || 0) + (thisMac.today?.up || 0));
         usedMonth = fmt((thisMac.month?.down || 0) + (thisMac.month?.up || 0));
-      } else if (d.estimatedMb && d.estimatedMb > 0) {
-        usedMonth = `${fmt(d.estimatedMb)} <small style="color:var(--mute)">(estimated)</small>`;
-      } else {
-        usedMonth = `0 MB <small style="color:var(--mute)">(estimated)</small>`;
-      }
-
-      let limitHtml = "—";
-      if (!d.isProtected && d.mac) {
-        if (d.limitGb) {
-          const isExceeded = d.estimatedMb && (d.estimatedMb / 1024) >= d.limitGb;
-          const autoTag = d.autoBlock ? ' <small style="font-size:10px;color:var(--mute)">· auto</small>' : '';
-          limitHtml = `<button class="btn-action-limit ${isExceeded ? 'limit-exceeded' : ''}" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}" data-limit="${d.limitGb}" data-autoblock="${d.autoBlock ? 'true' : 'false'}" title="Edit soft limit">${d.limitGb} GB${autoTag}</button>`;
-        } else {
-          limitHtml = `<button class="btn-action-limit ghost" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}" data-limit="" data-autoblock="false" title="Set soft limit" style="opacity:0.6">+ Limit</button>`;
-        }
-      }
-
-      let accessHtml = "—";
-      if (d.isProtected) {
-        accessHtml = `<span class="tag-protected" title="${esc(d.protectedReason || 'Protected device')}">Protected</span>`;
-      } else if (d.mac) {
-        if (d.isBlocked) {
-          accessHtml = `<button class="btn-action-unblock" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}" title="Unblock device">Unblock</button>`;
-        } else {
-          accessHtml = `<button class="btn-action-block" data-mac="${esc(d.mac)}" data-name="${esc(d.name)}" title="Block Wi-Fi access">Block</button>`;
-        }
+      } else if (d.flow && d.flow > 0) {
+        usedToday = usedMonth = fmt(d.flow);
       }
 
       rows.push(`
-        <tr class="${isOnline ? "" : "off"} ${d.isBlocked ? "row-blocked" : ""}">
+        <tr class="${isOnline ? "" : "off"}">
           <td>
             <div class="dev-cell">
               ${dotHtml}
               <div>
-                ${nameHtml}${tagHtml}${d.isBlocked ? ' <span class="tag-blocked">Blocked</span>' : ''}
+                ${nameHtml}${tagHtml}
                 ${ipHtml}
               </div>
             </div>
@@ -647,8 +569,6 @@
           <td>${connHtml}</td>
           <td>${usedToday}</td>
           <td>${usedMonth}</td>
-          <td>${limitHtml}</td>
-          <td style="text-align:right">${accessHtml}</td>
         </tr>
       `);
     }
@@ -670,9 +590,7 @@
         </td>
         <td>Other connected devices</td>
         <td>${otherToday}</td>
-        <td>${otherMonth} <small style="color:var(--mute)">(estimated)</small></td>
-        <td>—</td>
-        <td style="text-align:right">—</td>
+        <td>${otherMonth}</td>
       </tr>
     `);
 
@@ -696,31 +614,10 @@
         <td><span class="tag" style="background:rgba(212,240,112,0.2);color:var(--ink);font-weight:700">Network Total</span></td>
         <td><b style="color:var(--lime);font-family:var(--font-heading);font-size:14px">${totalTodayStr}</b></td>
         <td><b style="color:var(--lime);font-family:var(--font-heading);font-size:14px">${totalMonthStr}</b></td>
-        <td>—</td>
-        <td style="text-align:right">—</td>
       </tr>
     `);
 
     tbody.innerHTML = rows.join("");
-
-    // Toggle blacklist banner and Unblock All button
-    const blockedList = blockedMacs || [];
-    const banner = $("blacklistBanner");
-    const btnUnblockAll = $("btnUnblockAll");
-    const bannerText = $("blacklistBannerText");
-    if (banner) {
-      if (blockedList.length > 0) {
-        banner.style.display = "flex";
-        if (bannerText) {
-          bannerText.textContent = `${blockedList.length} device${blockedList.length === 1 ? "" : "s"} currently blocked`;
-        }
-      } else {
-        banner.style.display = "none";
-      }
-    }
-    if (btnUnblockAll) {
-      btnUnblockAll.style.display = blockedList.length > 0 ? "inline-block" : "none";
-    }
 
     // Attach click listeners to nickname edit buttons
     tbody.querySelectorAll(".btn-edit-nick").forEach((btn) => {
@@ -730,37 +627,13 @@
       });
     });
 
-    // Attach click listeners to block buttons
-    tbody.querySelectorAll(".btn-action-block").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openBlockModal(btn.dataset.mac, btn.dataset.name);
-      });
-    });
-
-    // Attach click listeners to unblock buttons
-    tbody.querySelectorAll(".btn-action-unblock").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        await handleUnblock(btn.dataset.mac, btn.dataset.name);
-      });
-    });
-
-    // Attach click listeners to soft limit buttons
-    tbody.querySelectorAll(".btn-action-limit").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        openLimitModal(btn.dataset.mac, btn.dataset.name, btn.dataset.limit, btn.dataset.autoblock);
-      });
-    });
-
     // Update callout note with start date and tally summary
     const sinceStr = meas?.since ? new Date(meas.since).toLocaleDateString([], { day: "numeric", month: "short" }) : "when this app started";
     const thisMacTodayFormatted = fmt(thisMac?.today ? (thisMac.today.down || 0) + (thisMac.today.up || 0) : 0);
     const callout = $("devicesCallout");
     if (callout) {
       callout.innerHTML = `
-        <b>How device usage is measured:</b> This router doesn’t report per-device byte counters in its firmware, so only <b>this Mac</b> is measured directly via macOS network counters (${thisMacTodayFormatted} today). <b>“All other devices together”</b> is calculated as the router’s total traffic minus this Mac (${otherToday} today). <b>“Total network usage”</b> (${totalTodayStr} today / ${totalMonthStr} this month) is the sum of all connected devices. All individual Wi-Fi device numbers are estimated proportional to time seen on network.
+        <b>How device usage is measured:</b> This router doesn’t report per-device byte counters in its firmware, so only <b>this Mac</b> is measured directly via macOS network counters (${thisMacTodayFormatted} today). <b>“All other devices together”</b> is calculated as the router’s total traffic minus this Mac (${otherToday} today). <b>“Total network usage”</b> (${totalTodayStr} today / ${totalMonthStr} this month) is the sum of all connected devices.
       `;
     }
   }
@@ -816,149 +689,6 @@
       if (updated) render(updated);
     } catch (e) {
       console.warn("Failed to reset nickname:", e);
-    }
-  });
-
-  // Block Device Modal Handlers (Rule 2: explicit confirmation with name & MAC)
-  let pendingBlockMac = null;
-  let pendingBlockName = null;
-
-  function openBlockModal(mac, name) {
-    pendingBlockMac = mac;
-    pendingBlockName = name || mac;
-    if ($("blockConfirmDeviceName")) $("blockConfirmDeviceName").textContent = pendingBlockName;
-    if ($("blockConfirmDeviceMac")) $("blockConfirmDeviceMac").textContent = mac;
-    const modal = $("blockConfirmModal");
-    if (modal) modal.style.display = "flex";
-  }
-
-  function closeBlockModal() {
-    pendingBlockMac = null;
-    pendingBlockName = null;
-    const modal = $("blockConfirmModal");
-    if (modal) modal.style.display = "none";
-    const btn = $("btnExecuteBlock");
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Confirm Block";
-    }
-  }
-
-  $("btnCancelBlock")?.addEventListener("click", closeBlockModal);
-  $("blockConfirmModal")?.addEventListener("click", (e) => {
-    if (e.target === $("blockConfirmModal")) closeBlockModal();
-  });
-
-  $("btnExecuteBlock")?.addEventListener("click", async () => {
-    if (!pendingBlockMac) return;
-    const btn = $("btnExecuteBlock");
-    btn.disabled = true;
-    btn.textContent = "Blocking…";
-    try {
-      const updated = await api.blockDevice(pendingBlockMac, pendingBlockName);
-      closeBlockModal();
-      if (updated) render(updated);
-    } catch (err) {
-      alert(err.message || "Failed to block device");
-      btn.disabled = false;
-      btn.textContent = "Confirm Block";
-    }
-  });
-
-  // Unblock Device Handler
-  async function handleUnblock(mac, name) {
-    try {
-      const updated = await api.unblockDevice(mac, name);
-      if (updated) render(updated);
-    } catch (err) {
-      alert(err.message || "Failed to unblock device");
-    }
-  }
-
-  // Unblock All Modal Handlers (Rule 4)
-  function openUnblockAllModal() {
-    const modal = $("unblockAllModal");
-    if (modal) modal.style.display = "flex";
-  }
-
-  function closeUnblockAllModal() {
-    const modal = $("unblockAllModal");
-    if (modal) modal.style.display = "none";
-    const btn = $("btnExecuteUnblockAll");
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Unblock All";
-    }
-  }
-
-  $("btnUnblockAll")?.addEventListener("click", openUnblockAllModal);
-  $("btnBannerUnblockAll")?.addEventListener("click", openUnblockAllModal);
-  $("btnCancelUnblockAll")?.addEventListener("click", closeUnblockAllModal);
-  $("unblockAllModal")?.addEventListener("click", (e) => {
-    if (e.target === $("unblockAllModal")) closeUnblockAllModal();
-  });
-
-  $("btnExecuteUnblockAll")?.addEventListener("click", async () => {
-    const btn = $("btnExecuteUnblockAll");
-    btn.disabled = true;
-    btn.textContent = "Unblocking…";
-    try {
-      const updated = await api.unblockAll();
-      closeUnblockAllModal();
-      if (updated) render(updated);
-    } catch (err) {
-      alert(err.message || "Failed to unblock all devices");
-      btn.disabled = false;
-      btn.textContent = "Unblock All";
-    }
-  });
-
-  // Device Soft Limit Modal Handlers (Rule 7)
-  let activeLimitMac = null;
-
-  function openLimitModal(mac, name, currentLimit, autoBlock) {
-    activeLimitMac = mac;
-    if ($("limitModalDeviceName")) $("limitModalDeviceName").textContent = name || mac;
-    if ($("deviceLimitGbInput")) $("deviceLimitGbInput").value = currentLimit || "";
-    if ($("deviceAutoBlockCheck")) $("deviceAutoBlockCheck").checked = autoBlock === "true" || autoBlock === true;
-    const modal = $("deviceLimitModal");
-    if (modal) modal.style.display = "flex";
-    setTimeout(() => $("deviceLimitGbInput")?.focus(), 60);
-  }
-
-  function closeLimitModal() {
-    activeLimitMac = null;
-    const modal = $("deviceLimitModal");
-    if (modal) modal.style.display = "none";
-  }
-
-  $("btnCancelDeviceLimit")?.addEventListener("click", closeLimitModal);
-  $("deviceLimitModal")?.addEventListener("click", (e) => {
-    if (e.target === $("deviceLimitModal")) closeLimitModal();
-  });
-
-  $("btnSaveDeviceLimit")?.addEventListener("click", async () => {
-    if (!activeLimitMac) return;
-    const input = $("deviceLimitGbInput");
-    const val = input ? parseFloat(input.value) : null;
-    const autoBlock = $("deviceAutoBlockCheck") ? $("deviceAutoBlockCheck").checked : false;
-    closeLimitModal();
-    try {
-      const updated = await api.setDeviceLimit(activeLimitMac, isNaN(val) ? null : val, autoBlock);
-      if (updated) render(updated);
-    } catch (err) {
-      alert(err.message || "Failed to save device limit");
-    }
-  });
-
-  $("btnRemoveDeviceLimit")?.addEventListener("click", async () => {
-    if (!activeLimitMac) return;
-    closeLimitModal();
-    try {
-      const updated = await api.setDeviceLimit(activeLimitMac, null, false);
-      if (updated) render(updated);
-    } catch (err) {
-      alert(err.message || "Failed to remove device limit");
     }
   });
 
@@ -1131,7 +861,7 @@
     renderUsageOverTimeChart(d);
 
     // Devices Table
-    renderDevices(d.devices || [], d.thisComputer, d.otherDevices, d.measured, d.blockedMacs);
+    renderDevices(d.devices || [], d.thisComputer, d.otherDevices, d.measured);
 
     // Update settings inputs if not focused
     if (document.activeElement !== $("sRouterHost")) $("sRouterHost").value = d.config?.routerHost || "192.168.0.1";
@@ -1140,9 +870,6 @@
     if (document.activeElement !== $("sWarnPercent")) $("sWarnPercent").value = String(d.config?.warnPercent || 80);
     if ($("sNotifyNewDevice")) $("sNotifyNewDevice").checked = d.config?.notifyNewDevice !== false;
     if ($("sNotifyOffline")) $("sNotifyOffline").checked = d.config?.notifyOffline !== false;
-    if (document.activeElement !== $("sAutoUnblockSchedule") && $("sAutoUnblockSchedule")) {
-      $("sAutoUnblockSchedule").value = d.config?.autoUnblockSchedule || d.autoUnblockSchedule || "disabled";
-    }
     $("sShowMenuBar").checked = d.config?.showMenuBar !== false;
     $("sOpenAtLogin").checked = Boolean(d.config?.openAtLogin);
     if (document.activeElement !== $("sTheme")) $("sTheme").value = d.config?.theme || "auto";
@@ -1202,7 +929,6 @@
     const dailyLimitGb = dailyText ? Number(dailyText) : 15;
     const notifyNewDevice = $("sNotifyNewDevice") ? $("sNotifyNewDevice").checked : true;
     const notifyOffline = $("sNotifyOffline") ? $("sNotifyOffline").checked : true;
-    const autoUnblockSchedule = $("sAutoUnblockSchedule") ? $("sAutoUnblockSchedule").value : "disabled";
     const showMenuBar = $("sShowMenuBar").checked;
     const openAtLogin = $("sOpenAtLogin").checked;
     const theme = $("sTheme").value;
@@ -1215,7 +941,6 @@
       dailyLimitGb,
       notifyNewDevice,
       notifyOffline,
-      autoUnblockSchedule,
       showMenuBar,
       openAtLogin,
       theme,
@@ -1228,7 +953,6 @@
   $("sWarnPercent")?.addEventListener("change", saveSettings);
   $("sNotifyNewDevice")?.addEventListener("change", saveSettings);
   $("sNotifyOffline")?.addEventListener("change", saveSettings);
-  $("sAutoUnblockSchedule")?.addEventListener("change", saveSettings);
   $("sShowMenuBar")?.addEventListener("change", saveSettings);
   $("sOpenAtLogin")?.addEventListener("change", saveSettings);
   $("sTheme")?.addEventListener("change", () => {

@@ -95,68 +95,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (urlPath === "/api/devices/block" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", async () => {
-      try {
-        const { mac, name } = JSON.parse(body);
-        const result = await engine.blockDevice(mac, name);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
-      } catch (e) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-    return;
-  }
 
-  if (urlPath === "/api/devices/unblock" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", async () => {
-      try {
-        const { mac, name } = JSON.parse(body);
-        const result = await engine.unblockDevice(mac, name);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
-      } catch (e) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-    return;
-  }
-
-  if (urlPath === "/api/devices/unblock-all" && req.method === "POST") {
-    try {
-      const result = await engine.unblockAll();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ success: true, result, summary: engine.getSummary() }));
-    } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: e.message }));
-    }
-    return;
-  }
-
-  if (urlPath === "/api/devices/limit" && req.method === "POST") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      try {
-        const { mac, limitGb, autoBlock } = JSON.parse(body);
-        engine.setDeviceLimit(mac, limitGb, autoBlock);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true, summary: engine.getSummary() }));
-      } catch (e) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: e.message }));
-      }
-    });
-    return;
-  }
 
   if (urlPath === "/api/test-connection" && req.method === "POST") {
     let body = "";

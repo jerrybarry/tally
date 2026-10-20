@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { createRouter } from "./router.js";
-import { measureThisComputer, getLocalMachineInfo } from "./local.js";
+import { measureThisComputer } from "./local.js";
 import { isEncryptionAvailable, encryptString, decryptString } from "./vault.js";
 
 export class DataEngine extends EventEmitter {
@@ -17,22 +17,11 @@ export class DataEngine extends EventEmitter {
     this.samples = [];
     this.latest = null;
     this.devicesSeen = new Map();
-    this.blockedMacs = new Set();
-    this.aclHistory = [];
-    this.deviceEstimatedUsage = new Map();
-    this.limitNotifiedDevices = new Set();
     this.pollTimer = null;
     this.connected = false;
     this.lastError = null;
     this.router = null;
     this.historyLoaded = false;
-
-    // Load saved estimated usage if available
-    if (this.config.deviceEstimatedMb) {
-      for (const [mac, mb] of Object.entries(this.config.deviceEstimatedMb)) {
-        this.deviceEstimatedUsage.set(String(mac).toLowerCase(), Number(mb) || 0);
-      }
-    }
 
     this.EVERY = (this.config.pollSeconds || 30) * 1000;
     this.GB = this.config.gbBase || 1024;
@@ -62,10 +51,6 @@ export class DataEngine extends EventEmitter {
       pollSeconds: 30,
       gbBase: 1024,
       deviceNicknames: {},
-      deviceLimits: {},
-      deviceEstimatedMb: {},
-      autoUnblockSchedule: "disabled", // "disabled", "daily", "monthly"
-      lastAutoUnblockKey: null,
     };
 
     if (fs.existsSync(this.configFile)) {
@@ -160,308 +145,6 @@ export class DataEngine extends EventEmitter {
     this.saveConfig({ deviceNicknames: nicknames });
   }
 
-  isProtectedDevice(device = {}) {
-    const routerHost = String(this.config.routerHost || "192.168.0.1").trim().toLowerCase();
-    const targetIp = String(device.ip || "").trim().toLowerCase();
-    const targetMac = String(device.mac || "").trim().toLowerCase();
-
-    // 1. Router Gateway Protection (Rule 2)
-    if (targetIp === routerHost || targetIp === "192.168.0.1") {
-      return {
-        protected: true,
-        reason: "Router gateway (192.168.0.1) cannot be blocked.",
-      };
-    }
-
-    // 2. This Computer Protection (via OS network interfaces - Rule 2)
-    const local = getLocalMachineInfo();
-    if (targetIp && local.ips.has(targetIp)) {
-      return {
-        protected: true,
-        reason: `This computer (${local.hostname} - ${device.ip}) cannot be blocked.`,
-      };
-    }
-    if (targetMac && local.macs.has(targetMac)) {
-      return {
-        protected: true,
-        reason: `This computer (${local.hostname} - ${device.mac}) cannot be blocked.`,
-      };
-    }
-
-    // 3. This Computer Protection (via measured local device)
-    const me = this.latest?.local;
-    if (me) {
-      if (targetIp && me.ip && targetIp === me.ip.toLowerCase()) {
-        return {
-          protected: true,
-          reason: `This computer (${me.name || local.hostname} - ${device.ip}) cannot be blocked.`,
-        };
-      }
-      if (targetMac && me.mac && targetMac === me.mac.toLowerCase()) {
-        return {
-          protected: true,
-          reason: `This computer (${me.name || local.hostname} - ${device.mac}) cannot be blocked.`,
-        };
-      }
-    }
-
-    if (device.isThisComputer) {
-      return {
-        protected: true,
-        reason: "This computer cannot be blocked.",
-      };
-    }
-
-    return { protected: false };
-  }
-
-  logAclEvent(action, mac, name, details) {
-    const entry = {
-      type: "acl_event",
-      action, // "block", "unblock", "unblock_all"
-      mac: mac || null,
-      name: name || null,
-      timestamp: new Date().toISOString(),
-      ts: Date.now(),
-      success: true,
-      details: details || null,
-    };
-    try {
-      fs.appendFileSync(this.dataFile, JSON.stringify(entry) + "\n");
-    } catch (e) {
-      console.warn("Could not write ACL event to usage.jsonl:", e.message);
-    }
-    this.aclHistory.push(entry);
-    this.emit("acl-event", entry);
-  }
-
-  async blockDevice(mac, name, reason) {
-    if (!mac) throw new Error("MAC address is required.");
-    const cleanMac = mac.trim().toUpperCase();
-    const dev = this.devicesSeen.get(cleanMac) ||
-                this.devicesSeen.get(cleanMac.toLowerCase()) ||
-                [...this.devicesSeen.values()].find((d) => d.mac && d.mac.toUpperCase() === cleanMac) ||
-                { mac: cleanMac, name: name || "Unknown Device" };
-
-    const prot = this.isProtectedDevice(dev);
-    if (prot.protected) {
-      throw new Error(`Refused to block: ${prot.reason}`);
-    }
-
-    if (!this.router) this.initRouter();
-    const current = await this.router.getBlacklist();
-    const macSet = new Set(current.macs.map((m) => m.toUpperCase()));
-
-    if (macSet.has(cleanMac)) {
-      this.blockedMacs = macSet;
-      return { success: true, alreadyBlocked: true, macs: [...macSet] };
-    }
-
-    macSet.add(cleanMac);
-    const result = await this.router.setBlacklist([...macSet]);
-
-    this.blockedMacs = new Set(result.macs.map((m) => m.toUpperCase()));
-    this.logAclEvent("block", cleanMac, name || dev.name, reason || "Manual block by user");
-    const summary = this.getSummary();
-    this.emit("update", summary);
-
-    return summary;
-  }
-
-  async unblockDevice(mac, name, reason) {
-    if (!mac) throw new Error("MAC address is required.");
-    const cleanMac = mac.trim().toUpperCase();
-
-    if (!this.router) this.initRouter();
-    const current = await this.router.getBlacklist();
-    const macSet = new Set(current.macs.map((m) => m.toUpperCase()));
-    macSet.delete(cleanMac);
-
-    const result = await this.router.setBlacklist([...macSet]);
-
-    this.blockedMacs = new Set(result.macs.map((m) => m.toUpperCase()));
-    this.logAclEvent("unblock", cleanMac, name || "Device", reason || "Manual unblock by user");
-    const summary = this.getSummary();
-    this.emit("update", summary);
-
-    return summary;
-  }
-
-  async unblockAll(reason = "Manual unblock all by user") {
-    if (!this.router) this.initRouter();
-    const result = await this.router.setBlacklist([]);
-
-    this.blockedMacs = new Set();
-    this.logAclEvent("unblock_all", null, "All Devices", reason);
-    const summary = this.getSummary();
-    this.emit("update", summary);
-
-    return summary;
-  }
-
-  async syncBlacklist() {
-    if (this.router && typeof this.router.getBlacklist === "function") {
-      try {
-        const bl = await this.router.getBlacklist();
-        if (bl?.macs) {
-          this.blockedMacs = new Set(bl.macs.map((m) => m.toUpperCase()));
-        }
-      } catch {}
-    }
-  }
-
-  setDeviceLimit(mac, limitGb, autoBlock) {
-    if (!mac) return;
-    const macKey = String(mac).toLowerCase();
-    const limits = { ...(this.config.deviceLimits || {}) };
-
-    if (limitGb == null || limitGb === "" || Number(limitGb) <= 0) {
-      delete limits[macKey];
-    } else {
-      limits[macKey] = {
-        limitGb: Number(limitGb),
-        autoBlock: Boolean(autoBlock),
-      };
-    }
-
-    this.saveConfig({ deviceLimits: limits });
-  }
-
-  getEstimatedDeviceUsage(mac) {
-    if (!mac) return 0;
-    const macKey = String(mac).toLowerCase();
-    const rawEst = this.deviceEstimatedUsage.get(macKey) || 0;
-    return Math.round(rawEst * 10) / 10;
-  }
-
-  updateEstimatedDeviceUsage(rec) {
-    if (!Array.isArray(rec.devices) || this.samples.length < 2) return;
-
-    const prev = this.samples.at(-2);
-    const cur = this.samples.at(-1);
-    if (!prev || !cur) return;
-
-    const totalGrowth = this.grow(cur.total, prev.total);
-    let localGrowth = 0;
-    if (cur.lrx != null && prev.lrx != null) {
-      localGrowth = (this.grow(cur.lrx, prev.lrx) + this.grow(cur.ltx, prev.ltx)) / this.MIB;
-    }
-
-    const otherGrowth = Math.max(0, totalGrowth - localGrowth);
-    if (otherGrowth <= 0) return;
-
-    const me = rec.local;
-    const onlineOthers = rec.devices.filter((d) => {
-      const isMe = me && (me.ip === d.ip || (me.mac && d.mac && me.mac.toLowerCase() === d.mac.toLowerCase()));
-      return !isMe && (d.wifi_connected || d.link !== "wlan");
-    });
-
-    const activeList = onlineOthers.length > 0 ? onlineOthers : rec.devices.filter((d) => {
-      const isMe = me && (me.ip === d.ip || (me.mac && d.mac && me.mac.toLowerCase() === d.mac.toLowerCase()));
-      return !isMe;
-    });
-
-    if (activeList.length === 0) return;
-    const share = otherGrowth / activeList.length;
-
-    for (const d of activeList) {
-      if (!d.mac) continue;
-      const macKey = String(d.mac).toLowerCase();
-      const curVal = this.deviceEstimatedUsage.get(macKey) || 0;
-      this.deviceEstimatedUsage.set(macKey, curVal + share);
-    }
-
-    // Persist to config
-    const estObj = {};
-    for (const [k, v] of this.deviceEstimatedUsage.entries()) {
-      estObj[k] = Math.round(v * 10) / 10;
-    }
-    this.config.deviceEstimatedMb = estObj;
-  }
-
-  async checkAutoUnblockSchedule() {
-    const sched = this.config.autoUnblockSchedule || "disabled";
-    if (sched === "disabled") return;
-
-    const now = Date.now();
-    const curDay = this.dayKey(now);
-    const curMonth = curDay.slice(0, 7);
-
-    if (sched === "daily") {
-      if (this.config.lastAutoUnblockKey !== curDay) {
-        try {
-          await this.unblockAll("Auto-unblock: Daily reset schedule");
-          this.saveConfig({ lastAutoUnblockKey: curDay });
-          this.emit("auto-unblock-triggered", { schedule: "daily", key: curDay });
-        } catch (e) {
-          console.warn("Daily auto-unblock failed:", e.message);
-        }
-      }
-    } else if (sched === "monthly") {
-      if (this.config.lastAutoUnblockKey !== curMonth) {
-        try {
-          await this.unblockAll("Auto-unblock: Monthly reset schedule");
-          this.saveConfig({ lastAutoUnblockKey: curMonth });
-          this.emit("auto-unblock-triggered", { schedule: "monthly", key: curMonth });
-        } catch (e) {
-          console.warn("Monthly auto-unblock failed:", e.message);
-        }
-      }
-    }
-  }
-
-  async checkDeviceLimits() {
-    const limits = this.config.deviceLimits || {};
-    const todayKey = this.dayKey(Date.now());
-
-    for (const [macKey, cfg] of Object.entries(limits)) {
-      if (!cfg || !cfg.limitGb || cfg.limitGb <= 0) continue;
-
-      const estMb = this.getEstimatedDeviceUsage(macKey);
-      const estGb = estMb / this.GB;
-
-      if (estGb >= cfg.limitGb) {
-        const notifKey = `${macKey}-${todayKey}-${cfg.limitGb}`;
-        if (!this.limitNotifiedDevices.has(notifKey)) {
-          this.limitNotifiedDevices.add(notifKey);
-
-          const dev = this.devicesSeen.get(macKey.toUpperCase()) ||
-                      this.devicesSeen.get(macKey.toLowerCase()) ||
-                      { mac: macKey, name: "Device" };
-          const nick = this.config.deviceNicknames?.[macKey];
-          const displayName = nick || dev.name || "Device";
-
-          if (cfg.autoBlock) {
-            try {
-              await this.blockDevice(
-                macKey,
-                displayName,
-                `Auto-blocked: passed estimated limit of ${cfg.limitGb} GB (${estGb.toFixed(1)} GB used)`
-              );
-              this.emit("device-auto-blocked", {
-                mac: macKey,
-                name: displayName,
-                limitGb: cfg.limitGb,
-                estimatedGb: estGb.toFixed(1),
-              });
-            } catch (err) {
-              console.warn("Auto-block on limit exceeded failed:", err.message);
-            }
-          } else {
-            this.emit("device-limit-reached", {
-              mac: macKey,
-              name: displayName,
-              limitGb: cfg.limitGb,
-              estimatedGb: estGb.toFixed(1),
-              autoBlock: false,
-            });
-          }
-        }
-      }
-    }
-  }
-
-
   initRouter() {
     this.router = createRouter({
       host: this.config.routerHost || "192.168.0.1",
@@ -484,10 +167,6 @@ export class DataEngine extends EventEmitter {
   }
 
   ingest(rec) {
-    if (rec.type === "acl_event") {
-      this.aclHistory.push(rec);
-      return;
-    }
     const t = Date.parse(rec.ts),
       m = rec.month_mb;
     if (![t, m?.down, m?.up, m?.total].every((v) => v != null && !Number.isNaN(v))) return;
@@ -616,16 +295,6 @@ export class DataEngine extends EventEmitter {
       this.ingest(rec);
       this.connected = true;
       this.lastError = null;
-
-      // Update estimated device usage and evaluate soft limits (Rule 7)
-      this.updateEstimatedDeviceUsage(rec);
-      await this.checkDeviceLimits();
-
-      // Check scheduled auto-unblock (Rule 4)
-      await this.checkAutoUnblockSchedule();
-
-      // Periodically sync router blacklist
-      await this.syncBlacklist();
 
       const summary = this.getSummary();
       this.emit("update", summary);
@@ -779,28 +448,14 @@ export class DataEngine extends EventEmitter {
 
     const deviceList = [...this.devicesSeen.values()].map((d) => {
       const macKey = d.mac ? String(d.mac).toLowerCase() : "";
-      const macUpper = d.mac ? String(d.mac).toUpperCase() : "";
       const nickname = this.config.deviceNicknames?.[macKey] || null;
-      const isThisComp = Boolean(me && (me.ip === d.ip || (me.mac && d.mac && me.mac.toLowerCase() === d.mac.toLowerCase())));
-      const prot = this.isProtectedDevice({ ...d, isThisComputer: isThisComp });
-      const isBlocked = this.blockedMacs.has(macUpper);
-      const estMb = this.getEstimatedDeviceUsage(d.mac);
-      const limitConf = this.config.deviceLimits?.[macKey];
-
       return {
         ...d,
         name: nickname || d.name || "Unknown Device",
         nickname,
         originalName: d.name || "Unknown Device",
         online: last ? d.t === last.t : false,
-        isThisComputer: isThisComp,
-        isProtected: prot.protected,
-        protectedReason: prot.reason || null,
-        isBlocked,
-        estimatedMb: estMb,
-        estimatedGb: (estMb / this.GB).toFixed(2),
-        limitGb: limitConf?.limitGb ?? null,
-        autoBlock: Boolean(limitConf?.autoBlock),
+        isThisComputer: Boolean(me && (me.ip === d.ip || (me.mac && d.mac && me.mac.toLowerCase() === d.mac.toLowerCase()))),
       };
     });
 
@@ -910,9 +565,6 @@ export class DataEngine extends EventEmitter {
       thisComputer: thisMacData,
       otherDevices: otherDevicesData,
       devices: deviceList,
-      blockedMacs: [...this.blockedMacs],
-      autoUnblockSchedule: this.config.autoUnblockSchedule || "disabled",
-      aclHistory: this.aclHistory.slice(-50),
     };
   }
 }
